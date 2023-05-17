@@ -240,3 +240,312 @@ func networkDelayTime(times [][]int, n int, k int) int {
 	return ret
 }
 ```
+
+## [最小体力消耗路径](https://leetcode.cn/problems/path-with-minimum-effort/)
+### 解法1：dijkstra算法
+我们可以把二维数组的**每个元素看成一个点**，比如将第0行第0列元素看成节点0，将第0行第1列元素看成节点1，依次类推，**两个点之间的差值的绝对值看成是这两个点形成的边（edge）的权重（weight）**，然后需要求出的是起始点到终点的权重，这样就可以将这个问题转换成可以用dijkstra算法解决的问题。
+
+注意题目中说的是**高度差绝对值**，正是有了这个条件我们才能用dijkstra算法来解决此题。
+
+![dij3](https://github.com/TanLian/algorithm/blob/main/img/dij3.png)
+
+有人可能会说dijkstra算法要求**边是有向的**，而你这个图看起来边是没有方向的。其实我这个图边也是有方向的，只是是**双向**的，如从节点0到节点1的权重为1，从节点1到节点0的权重也为1。因为是双向的，所以我就没把方向画出来。
+
+不过这个跟dijkstra算法有一些许不同，之前是这样的，比如说从节点0到节点1的权重是1，节点1到节点2的权重是2，则节点0到节点2的权重则为`1+2=3`，也就是说**之前是累加的关系**，所以之前的代码我们是这么写的：
+```go
+// 如果相邻节点之前未到达过 或者 当前这条路径比之前的任何路径的距离都要短
+if ret[v.to] == unReachable || ret[id]+v.weight < ret[v.to] { // 加上这个条件实际上是过滤掉了那些永远不可能成为最短距离的路径，达到了剪枝的效果
+	heap.Push(&hp, [2]int{v.to, ret[id] + v.weight})
+}
+```
+
+而本题规定，**一条路径耗费的 体力值 是路径上相邻格子之间 高度差绝对值 的 最大值 决定的。**，也就是说本题不是累加的关系了，而是**取路径上边的权重的最大值**。如节点0到节点1的权重是1，节点1到节点2的权重是2，那么节点0到节点2的权重也是2，所以我们需要把代码改成下面这样：
+```go
+w := max(ret[id], v.weight) // 这里取整个路径上的边的最大权重
+if ret[v.to] == unReachable || w < ret[v.to] { 
+	heap.Push(&hp, [2]int{v.to, w})
+}
+```
+除了这点之外，其它的代码就完全一样了。
+
+完整代码如下：
+
+golang版：
+```go
+func minimumEffortPath(heights [][]int) int {
+	rows := len(heights)
+	cols := len(heights[0])
+	var edges []Edge
+	for i := 0; i < rows; i++ {
+		for j := 0; j < cols; j++ {
+			if i > 0 {
+				edges = append(edges, Edge{from: i*cols + j, to: (i-1)*cols + j, weight: abs(heights[i][j] - heights[i-1][j])})
+			}
+			if i+1 < rows {
+				edges = append(edges, Edge{from: i*cols + j, to: (i+1)*cols + j, weight: abs(heights[i][j] - heights[i+1][j])})
+			}
+			if j > 0 {
+				edges = append(edges, Edge{from: i*cols + j, to: i*cols + j - 1, weight: abs(heights[i][j] - heights[i][j-1])})
+			}
+			if j+1 < cols {
+				edges = append(edges, Edge{from: i*cols + j, to: i*cols + j + 1, weight: abs(heights[i][j] - heights[i][j+1])})
+			}
+		}
+	}
+
+	dij := dijkstra(rows*cols, 0, edges)
+	return dij[len(dij)-1]
+}
+
+func abs(a int) int {
+	if a < 0 {
+		return -a
+	}
+	return a
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+const unReachable = -1 // 不可达
+
+// Edge 代表一条有向边
+type Edge struct {
+	from   int // 起点
+	to     int // 终点
+	weight int // 权重
+}
+
+// dijkstra dijkstra算法的go实现
+// n: 节点总数
+// start: 起始节点
+// edges: 边
+// 返回值：从start到各个节点的最短距离，如果节点不可达则为-1
+func dijkstra(n, start int, edges []Edge) []int {
+	ret := make([]int, n) // 返回值
+
+	// 各个节点都初始化为不可达
+	for i := 0; i < n; i++ {
+		ret[i] = unReachable
+	}
+
+	// 起点到起点的最短距离为0
+	ret[start] = 0
+
+	// 构建相邻边
+	neighbours := makeNeighbours(n, edges)
+
+	// 创建小顶堆
+	var hp MinHeap
+	heap.Init(&hp)
+	heap.Push(&hp, [2]int{start, 0}) // 下标0表示节点id，下标1表示从起点到该节点的最短距离
+
+	for hp.Len() > 0 {
+		item := heap.Pop(&hp).([2]int)
+		var (
+			id  = item[0] // 当前节点id
+			dis = item[1] // 从起点到当前节点的最短距离
+		)
+
+		// 如果之前有更小的路径到达该节点，则跳过
+		if ret[id] != unReachable && dis > ret[id] {
+			continue
+		}
+
+		// 走到这说明要么是第一次到达该节点，要么当前这条路径是达到该点的最短距离
+		ret[id] = dis
+
+		// 将该节点的相邻节点都加入到小顶堆中
+		for _, v := range neighbours[id] {
+			// 如果相邻节点之前未到达过 或者 当前这条路径比之前的任何路径的距离都要短
+			w := max(ret[id], v.weight)
+			if ret[v.to] == unReachable || w < ret[v.to] { // 加上这个条件实际上是过滤掉了那些永远不可能成为最短距离的路径，达到了剪枝的效果
+				heap.Push(&hp, [2]int{v.to, w})
+			}
+		}
+	}
+	return ret
+}
+
+// makeNeighbours 构建相邻边
+func makeNeighbours(n int, edges []Edge) [][]Edge {
+	neighbours := make([][]Edge, n)
+	for _, v := range edges {
+		neighbours[v.from] = append(neighbours[v.from], v)
+	}
+	return neighbours
+}
+
+// MinHeap 小顶堆
+type MinHeap [][2]int
+
+func (pq MinHeap) Len() int { return len(pq) }
+
+func (pq MinHeap) Less(i, j int) bool {
+	return pq[i][1] < pq[j][1]
+}
+
+func (pq MinHeap) Swap(i, j int) {
+	pq[i], pq[j] = pq[j], pq[i]
+}
+
+func (pq *MinHeap) Push(x interface{}) {
+	e := x.([2]int)
+	*pq = append(*pq, e)
+}
+
+func (pq *MinHeap) Pop() interface{} {
+	old := *pq
+	n := len(old)
+	node := old[n-1]
+	*pq = old[:n-1]
+	return node
+}
+```
+
+## [概率最大的路径](https://leetcode.cn/problems/path-with-maximum-probability)
+### 解法1：dijkstra算法
+这个可以用dijkstra算法解决，不过和之前的有两点不同：
+
+1. 之前都是求从起点到其他点的**最短**路径，而本题是求**最大**路径，所以本题我们不能用小顶堆而应该**用大顶堆**。
+2. 之前权重都是累加，比如节点1到节点2权重为1，节点2到节点3权重为3，则节点1到节点3权重为4。而本题是**累乘**，如节点1到节点2权重为0.5，节点2到节点3权重为0.5，则节点1到节点3的权重为0.25。
+
+主要是这两点不同，当然还有其他一些小的点，如之前的权重是整形，而**本题的权重是浮点型**。
+
+完整代码如下：
+
+golang版：
+```go
+func maxProbability(n int, edges [][]int, succProb []float64, start int, end int) float64 {
+	var es []Edge
+	for i := 0; i < len(edges); i++ {
+		es = append(es, Edge{from: edges[i][0], to: edges[i][1], weight: succProb[i]})
+		es = append(es, Edge{from: edges[i][1], to: edges[i][0], weight: succProb[i]})
+	}
+
+	ret := dijkstra(n, start, es)
+	if ret[end] == unReachable {
+		return 0
+	}
+	return ret[end]
+}
+
+func abs(a int) int {
+	if a < 0 {
+		return -a
+	}
+	return a
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+const unReachable = -1 // 不可达
+
+// Edge 代表一条有向边
+type Edge struct {
+	from   int     // 起点
+	to     int     // 终点
+	weight float64 // 权重
+}
+
+type Item struct {
+	id     int     // 节点id
+	weight float64 // 从起点到该节点的权重
+}
+
+// dijkstra dijkstra算法的go实现
+// n: 节点总数
+// start: 起始节点
+// edges: 边
+// 返回值：从start到各个节点的最短距离，如果节点不可达则为-1
+func dijkstra(n, start int, edges []Edge) []float64 {
+	ret := make([]float64, n) // 返回值
+
+	// 各个节点都初始化为不可达
+	for i := 0; i < n; i++ {
+		ret[i] = unReachable
+	}
+
+	// 起点到起点的最短距离为0
+	ret[start] = 0
+
+	// 构建相邻边
+	neighbours := makeNeighbours(n, edges)
+
+	// 创建小顶堆
+	var hp MinHeap
+	heap.Init(&hp)
+	heap.Push(&hp, Item{start, 1}) // 下标0表示节点id，下标1表示从起点到该节点的最短距离
+
+	for hp.Len() > 0 {
+		item := heap.Pop(&hp).(Item)
+		var (
+			id  = item.id     // 当前节点id
+			dis = item.weight // 从起点到当前节点的最短距离
+		)
+		//fmt.Println("id: ", id, " dis: ", dis)
+
+		// 如果之前有更小的路径到达该节点，则跳过
+		if ret[id] != unReachable && dis < ret[id] {
+			continue
+		}
+
+		// 走到这说明要么是第一次到达该节点，要么当前这条路径是达到该点的最短距离
+		ret[id] = dis
+
+		// 将该节点的相邻节点都加入到小顶堆中
+		for _, v := range neighbours[id] {
+			// 如果相邻节点之前未到达过 或者 当前这条路径比之前的任何路径的距离都要短
+			w := ret[id] * v.weight
+			if ret[v.to] == unReachable || w > ret[v.to] { // 加上这个条件实际上是过滤掉了那些永远不可能成为最短距离的路径，达到了剪枝的效果
+				heap.Push(&hp, Item{v.to, w})
+			}
+		}
+	}
+	return ret
+}
+
+// makeNeighbours 构建相邻边
+func makeNeighbours(n int, edges []Edge) [][]Edge {
+	neighbours := make([][]Edge, n)
+	for _, v := range edges {
+		neighbours[v.from] = append(neighbours[v.from], v)
+	}
+	return neighbours
+}
+
+// MinHeap 大顶堆
+type MinHeap []Item
+
+func (pq MinHeap) Len() int { return len(pq) }
+
+func (pq MinHeap) Less(i, j int) bool {
+	return pq[i].weight > pq[j].weight
+}
+
+func (pq MinHeap) Swap(i, j int) {
+	pq[i], pq[j] = pq[j], pq[i]
+}
+
+func (pq *MinHeap) Push(x interface{}) {
+	e := x.(Item)
+	*pq = append(*pq, e)
+}
+
+func (pq *MinHeap) Pop() interface{} {
+	old := *pq
+	n := len(old)
+	node := old[n-1]
+	*pq = old[:n-1]
+	return node
+}
+```
