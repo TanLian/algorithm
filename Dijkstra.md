@@ -80,7 +80,7 @@ func dijkstra(n, start int, edges []Edge) []int {
 	}
 
 	// 起点到起点的最短距离为0
-	ret[start] = 0
+	//ret[start] = 0
 
 	// 构建相邻边
 	neighbours := makeNeighbours(n, edges)
@@ -98,7 +98,7 @@ func dijkstra(n, start int, edges []Edge) []int {
 		)
 
 		// 如果之前有更小的路径到达该节点，则跳过
-		if ret[id] != unReachable && dis > ret[id] {
+		if ret[id] != unReachable /*&& dis > ret[id]*/ {
 			continue
 		}
 
